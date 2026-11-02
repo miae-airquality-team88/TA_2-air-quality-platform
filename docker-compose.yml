@@ -1,0 +1,102 @@
+# =============================================================
+#  Air Quality Platform - Infrastructure de base (Sprint 1)
+#  Ticket Jira : AQ-6
+#  Services : Kafka (mode KRaft, sans Zookeeper) + PostgreSQL
+#             + Kafka UI (interface web pour visualiser Kafka)
+# =============================================================
+name: air-quality-platform
+
+services:
+
+  # -----------------------------------------------------------
+  # Kafka en mode KRaft : un seul conteneur joue le rôle de
+  # broker ET de controller -> pas besoin de Zookeeper (moins de RAM)
+  # -----------------------------------------------------------
+  kafka:
+    image: apache/kafka:3.8.0
+    container_name: aq-kafka
+    ports:
+      - "9092:9092"          # accès depuis Windows (scripts Python lancés hors Docker)
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      # 3 "portes" d'entrée :
+      #  - PLAINTEXT      (kafka:29092)     -> pour les autres conteneurs
+      #  - PLAINTEXT_HOST (localhost:9092)  -> pour ton PC Windows
+      #  - CONTROLLER     (9093)            -> usage interne KRaft
+      KAFKA_LISTENERS: PLAINTEXT://:29092,PLAINTEXT_HOST://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      # Un seul broker -> facteur de réplication = 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+      # Les topics sont créés par un script versionné (ticket AQ-10),
+      # pas automatiquement -> meilleure maîtrise (bonne pratique DataOps)
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      # Limite la mémoire Java pour ménager le PC
+      KAFKA_HEAP_OPTS: "-Xmx512m -Xms512m"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - airquality-net
+
+  # -----------------------------------------------------------
+  # PostgreSQL : stockage des mesures, agrégats et anomalies
+  # -----------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: aq-postgres
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"   # 5433 côté Windows pour éviter un conflit avec un PostgreSQL local
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pg_data:/var/lib/postgresql/data          # les données survivent au redémarrage
+      - ./sql:/docker-entrypoint-initdb.d:ro      # scripts SQL exécutés au 1er démarrage (ticket AQ-12)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - airquality-net
+
+  # -----------------------------------------------------------
+  # Kafka UI : interface web pour voir topics et messages
+  # http://localhost:8085
+  # -----------------------------------------------------------
+  kafka-ui:
+    image: kafbat/kafka-ui:v1.0.0
+    container_name: aq-kafka-ui
+    ports:
+      - "8085:8080"          # 8085 car le port 8080 sera pris par Airflow plus tard
+    environment:
+      KAFKA_CLUSTERS_0_NAME: air-quality-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - airquality-net
+
+volumes:
+  pg_data:
+
+networks:
+  airquality-net:
+    name: airquality-net
