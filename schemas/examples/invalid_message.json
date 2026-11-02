@@ -1,0 +1,14 @@
+{
+  "sensor_id": "capteur-1",
+  "timestamp": "02/11/2026 14:30",
+  "location": {"lat": 30.4202},
+  "measurements": {
+    "pm2_5": "douze",
+    "pm10": 25.3,
+    "no2": 40.2,
+    "o3": 80.1,
+    "temperature": 22.5
+  },
+  "status": "ok",
+  "source": "simulator"
+}

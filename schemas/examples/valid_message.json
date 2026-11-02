@@ -1,0 +1,16 @@
+{
+  "sensor_id": "CAP_001",
+  "timestamp": "2026-11-02T14:30:00Z",
+  "location": {"lat": 30.4202, "lon": -9.5982},
+  "measurements": {
+    "pm2_5": 12.5,
+    "pm10": 25.3,
+    "no2": 40.2,
+    "o3": 80.1,
+    "temperature": 22.5,
+    "humidity": 65
+  },
+  "status": "active",
+  "source": "simulator",
+  "injected_anomaly": null
+}
