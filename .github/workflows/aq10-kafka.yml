@@ -1,0 +1,40 @@
+name: AQ-10 Kafka topics
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/create_topics.py'
+      - 'tests/test_create_topics*.py'
+      - 'common/config.py'
+      - 'docker-compose.yml'
+      - '.github/workflows/aq10-kafka.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: ruff check scripts/create_topics.py tests/test_create_topics*.py
+      - run: pytest -q
+      - name: Start the project's Kafka broker
+        run: docker compose up -d --wait --wait-timeout 180 kafka
+      - name: Verify topics, repeated execution, partitions and retention
+        env:
+          AQ10_KAFKA_INTEGRATION: '1'
+        run: pytest -q tests/test_create_topics_integration.py
+      - name: Kafka logs
+        if: failure()
+        run: docker compose logs kafka
+      - name: Stop test infrastructure
+        if: always()
+        run: docker compose down
