@@ -1,0 +1,71 @@
+# =============================================================
+#  Intégration continue (AQ-7)
+#  À chaque push sur main et à chaque Pull Request :
+#    1. lint   : vérification du style avec ruff
+#    2. tests  : pytest, avec un vrai PostgreSQL (service Docker de GitHub)
+#    3. docker : construction de l'image de l'application + vérification du docker-compose
+#  Une PR ne peut être fusionnée que si les 3 jobs sont verts (protection de main).
+# =============================================================
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ruff==0.7.4
+      - run: ruff check .
+
+  tests:
+    name: Tests (pytest + PostgreSQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: airquality
+          POSTGRES_PASSWORD: ci_password
+          POSTGRES_DB: airquality
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U airquality"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: airquality
+      POSTGRES_PASSWORD: ci_password
+      POSTGRES_DB: airquality
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Lancer les tests
+        run: pytest -v
+
+  docker:
+    name: Build Docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Construire l'image de l'application
+        run: docker build -t air-quality-app:ci .
+      - name: Vérifier la syntaxe du docker-compose
+        run: |
+          cp .env.example .env
+          docker compose --profile app config --quiet

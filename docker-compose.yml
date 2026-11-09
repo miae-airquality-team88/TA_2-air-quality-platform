@@ -1,6 +1,6 @@
 # =============================================================
 #  Air Quality Platform - Infrastructure de base (Sprint 1)
-#  Ticket Jira : AQ-6
+#  Tickets Jira : AQ-6 (infrastructure), AQ-7 (services applicatifs)
 #  Services : Kafka (mode KRaft, sans Zookeeper) + PostgreSQL
 #             + Kafka UI (interface web pour visualiser Kafka)
 # =============================================================
@@ -90,6 +90,47 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - airquality-net
+
+  # -----------------------------------------------------------
+  # Application Python (image construite depuis le Dockerfile, AQ-7)
+  # Profil "app" : ces services ne démarrent PAS avec un simple
+  # "docker compose up -d". Pour les lancer :
+  #   docker compose --profile app up -d --build
+  # -----------------------------------------------------------
+  streaming:
+    build: .
+    image: air-quality-app:latest
+    container_name: aq-streaming
+    profiles: ["app"]
+    command: ["sh", "-c", "python -m scripts.init_db && python -m streaming.consumer"]
+    env_file: .env
+    environment:          # dans le réseau Docker, les adresses changent
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - airquality-net
+
+  simulator:
+    build: .
+    image: air-quality-app:latest
+    container_name: aq-simulator
+    profiles: ["app"]
+    command: ["python", "-m", "ingestion.producer", "--sensors", "5", "--interval", "1"]
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    depends_on:
+      streaming:
+        condition: service_started
     restart: unless-stopped
     networks:
       - airquality-net
