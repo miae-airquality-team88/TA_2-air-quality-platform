@@ -1,4 +1,7 @@
-# air-quality-platform
+# TA_2-air-quality-platform
+
+![CI](https://github.com/miae-airquality-team88/TA_2-air-quality-platform/actions/workflows/ci.yml/badge.svg)
+
 
 Plateforme DataOps/MLOps de détection d’anomalies de qualité de l’air
 
@@ -28,6 +31,4 @@ Plateforme DataOps/MLOps de détection d’anomalies de qualité de l’air
 conda create -n airquality python=3.11 -y
 conda activate airquality
 pip install -r requirements.txt
-
-
 
