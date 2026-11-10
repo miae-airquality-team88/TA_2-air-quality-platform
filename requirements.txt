@@ -6,6 +6,7 @@ python-dotenv==1.0.1
 requests==2.32.3
 pandas==2.2.3
 jsonschema==4.23.0
+pydantic==2.9.2
 # --- Base de données (Sprint 2) ---
 psycopg2-binary==2.9.10
 # --- Qualité / tests ---

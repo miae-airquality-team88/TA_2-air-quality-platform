@@ -51,3 +51,20 @@ Voir [`examples/valid_message.json`](examples/valid_message.json).
 from common.contract import validate_message
 erreurs = validate_message(message)   # liste vide = message conforme
 ```
+
+## Validation et nettoyage en streaming (AQ-13)
+
+`streaming.validation.validate(raw)` applique le contrat avec Pydantic et renvoie
+`accepted`, `message`, `issues` et `is_clean`. Les champs inconnus, nombres sous
+forme de texte, booléens utilisés comme nombres, valeurs non finies et dates UTC
+impossibles sont rejetés. Les entiers sont acceptés comme nombres.
+
+Une structure invalide donne `accepted=False` et `message=None`. Une structure
+valide reste acceptée même si une mesure est absente ou hors plage : cette mesure
+est remplacée par `None`, avec un problème `missing`, `negative` ou `out_of_range`.
+Les autres mesures et le message original sont conservés. Les bornes du tableau
+ci-dessus sont inclusives. Les pics et capteurs bloqués nécessitent les règles
+ou fenêtres des autres tickets, ils ne sont pas détectés par cette seule validation.
+
+Après récupération du code : `pip install -r requirements.txt`.
+Tests ciblés : `pytest -q tests/test_validation.py`.
