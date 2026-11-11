@@ -18,6 +18,7 @@ Utilisation :
 """
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
+from math import isfinite
 
 DEFAULT_WINDOWS_MIN = (5, 15)
 DEFAULT_PARAMS = ("pm2_5", "pm10")
@@ -42,13 +43,25 @@ class SlidingWindows:
         """Ajoute une mesure, supprime les points trop anciens et renvoie les statistiques."""
         if isinstance(timestamp, str):
             timestamp = parse_timestamp(timestamp)
-        points = self._points[sensor_id]
-        points.append((timestamp, {p: measurements.get(p) for p in self.params}))
         latest = max(timestamp, self._latest.get(sensor_id, timestamp))
+        cutoff = latest - self.span
+        # Purger aussi les points retardés qui ne sont pas en tête.
+        points = deque((ts, m) for ts, m in self._points[sensor_id] if ts > cutoff)
+        if timestamp > cutoff:
+            # Concentrations numériques, finies et positives ou nulles uniquement.
+            values = {}
+            for param in self.params:
+                value = measurements.get(param)
+                valid = (
+                    isinstance(value, (int, float))
+                    and not isinstance(value, bool)
+                    and value >= 0
+                    and (not isinstance(value, float) or isfinite(value))
+                )
+                values[param] = value if valid else None
+            points.append((timestamp, values))
+        self._points[sensor_id] = points
         self._latest[sensor_id] = latest
-        # Les points sont (presque toujours) dans l'ordre : on retire les plus anciens en tête
-        while points and points[0][0] <= latest - self.span:
-            points.popleft()
         return self.stats(sensor_id)
 
     def stats(self, sensor_id):
