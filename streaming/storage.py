@@ -82,6 +82,7 @@ class Storage:
         self.max_wait_s = max_wait_s
         self._measurements = []
         self._anomalies = []
+        self._message_count = 0
         self._last_flush = time.monotonic()
         self.total = {"measurements": 0, "anomalies": 0}
 
@@ -94,11 +95,12 @@ class Storage:
         if processed is not None:
             self._measurements.append(processed_to_row(processed, partition, offset))
         self._anomalies.extend(anomaly_to_row(a, partition, offset) for a in anomalies)
+        self._message_count += 1
 
     def flush_if_due(self):
         """Écrit le lot s'il est plein ou trop ancien. Renvoie True si une écriture a eu lieu."""
         too_old = time.monotonic() - self._last_flush >= self.max_wait_s
-        if self.pending and (len(self._measurements) >= self.batch_size or too_old):
+        if self.pending and (self._message_count >= self.batch_size or too_old):
             self.flush()
             return True
         return False
@@ -106,57 +108,71 @@ class Storage:
     def flush(self):
         """Écrit tout ce qui est en attente, dans une seule transaction."""
         if self.pending:
+            inserted = {"measurements": 0, "anomalies": 0}
             try:
                 with self.conn.cursor() as cur:
                     if self._measurements:
-                        execute_values(
+                        rows = execute_values(
                             cur,
                             f"INSERT INTO measurements ({', '.join(MEASUREMENT_COLUMNS)}) "
-                            "VALUES %s ON CONFLICT DO NOTHING",
+                            "VALUES %s ON CONFLICT DO NOTHING RETURNING 1",
                             self._measurements,
+                            fetch=True,
                         )
+                        inserted["measurements"] = len(rows)
                     if self._anomalies:
-                        execute_values(
+                        rows = execute_values(
                             cur,
                             f"INSERT INTO anomalies ({', '.join(ANOMALY_COLUMNS)}) "
-                            "VALUES %s ON CONFLICT DO NOTHING",
+                            "VALUES %s ON CONFLICT DO NOTHING RETURNING 1",
                             self._anomalies,
+                            fetch=True,
                         )
+                        inserted["anomalies"] = len(rows)
                 self.conn.commit()
             except Exception:
                 self.conn.rollback()   # rien n'est écrit : le lot sera relu depuis Kafka
                 raise
-            self.total["measurements"] += len(self._measurements)
-            self.total["anomalies"] += len(self._anomalies)
+            self.total["measurements"] += inserted["measurements"]
+            self.total["anomalies"] += inserted["anomalies"]
             self._measurements.clear()
             self._anomalies.clear()
+        self._message_count = 0
         self._last_flush = time.monotonic()
 
 
 AGGREGATE_SQL = """
+WITH day_measurements AS (
+    SELECT * FROM measurements
+    WHERE measured_at >= %(day)s::date AND measured_at < %(day)s::date + 1
+), day_anomalies AS (
+    SELECT sensor_id, MIN(source) AS source, COUNT(*) AS nb
+    FROM anomalies
+    WHERE measured_at >= %(day)s::date AND measured_at < %(day)s::date + 1
+    GROUP BY sensor_id
+), sensors AS (
+    SELECT sensor_id FROM day_measurements
+    UNION
+    SELECT sensor_id FROM day_anomalies
+)
 INSERT INTO daily_aggregates (
     day, sensor_id, source, measurement_count, valid_count, completeness,
     pm2_5_avg, pm2_5_max, pm10_avg, pm10_max, no2_avg, no2_max, o3_avg, o3_max,
     temperature_avg, humidity_avg, anomaly_count, computed_at
 )
 SELECT
-    %(day)s::date, m.sensor_id, MIN(m.source),
-    COUNT(*), COUNT(*) FILTER (WHERE m.is_valid),
-    ROUND((COUNT(*) FILTER (WHERE m.is_valid))::numeric / COUNT(*), 4),
+    %(day)s::date, s.sensor_id, COALESCE(MIN(m.source), MIN(a.source)),
+    COUNT(m.id), COUNT(*) FILTER (WHERE m.is_valid),
+    ROUND((COUNT(*) FILTER (WHERE m.is_valid))::numeric / NULLIF(COUNT(m.id), 0), 4),
     AVG(m.pm2_5), MAX(m.pm2_5), AVG(m.pm10), MAX(m.pm10),
     AVG(m.no2), MAX(m.no2), AVG(m.o3), MAX(m.o3),
     AVG(m.temperature), AVG(m.humidity),
     COALESCE(MAX(a.nb), 0),
     clock_timestamp()
-FROM measurements m
-LEFT JOIN (
-    SELECT sensor_id, COUNT(*) AS nb
-    FROM anomalies
-    WHERE measured_at >= %(day)s::date AND measured_at < %(day)s::date + 1
-    GROUP BY sensor_id
-) a ON a.sensor_id = m.sensor_id
-WHERE m.measured_at >= %(day)s::date AND m.measured_at < %(day)s::date + 1
-GROUP BY m.sensor_id
+FROM sensors s
+LEFT JOIN day_measurements m ON m.sensor_id = s.sensor_id
+LEFT JOIN day_anomalies a ON a.sensor_id = s.sensor_id
+GROUP BY s.sensor_id
 ON CONFLICT (day, sensor_id) DO UPDATE SET
     source = EXCLUDED.source,
     measurement_count = EXCLUDED.measurement_count,

@@ -4,6 +4,9 @@ Les deux premiers tests n'ont pas besoin de PostgreSQL. Les suivants utilisent
 la fixture db_conn (base de test) et sont ignorés si PostgreSQL n'est pas démarré.
 """
 from datetime import date
+from unittest.mock import Mock
+
+import pytest
 
 from streaming.storage import (
     ANOMALY_COLUMNS,
@@ -66,6 +69,8 @@ def test_ecriture_par_lot(db_conn):
     assert count(db_conn, "measurements") == 2
     assert count(db_conn, "anomalies") == 1
 
+    assert storage.total == {"measurements": 2, "anomalies": 1}
+
 
 def test_pas_de_doublon_si_message_relu(db_conn):
     storage = Storage(db_conn)
@@ -74,6 +79,7 @@ def test_pas_de_doublon_si_message_relu(db_conn):
         storage.flush()
     assert count(db_conn, "measurements") == 1
     assert count(db_conn, "anomalies") == 1
+    assert storage.total == {"measurements": 1, "anomalies": 1}
 
 
 def test_agregats_quotidiens(db_conn):
@@ -90,3 +96,81 @@ def test_agregats_quotidiens(db_conn):
                     "pm2_5_max, anomaly_count FROM daily_aggregates")
         rows = cur.fetchall()
     assert rows == [(2, 1, 0.5, 20.0, 30.0, 1)]
+
+
+def test_lot_de_messages_rejetes():
+    storage = Storage(None, batch_size=2, max_wait_s=999)
+    storage.flush = Mock()
+    storage.add(None, [ANOMALY], 0, 1)
+    assert storage.flush_if_due() is False
+    storage.add(None, [ANOMALY], 0, 2)
+    assert storage.flush_if_due() is True
+    storage.flush.assert_called_once()
+
+
+def test_delai_de_flush(monkeypatch):
+    clock = Mock(return_value=100.0)
+    monkeypatch.setattr("streaming.storage.time.monotonic", clock)
+    storage = Storage(None, batch_size=50, max_wait_s=2)
+    storage.flush = Mock()
+    storage.add(None, [ANOMALY], 0, 1)
+    clock.return_value = 101.9
+    assert storage.flush_if_due() is False
+    clock.return_value = 102.0
+    assert storage.flush_if_due() is True
+
+
+def test_agregats_anomalies_seules(db_conn):
+    storage = Storage(db_conn, batch_size=2, max_wait_s=999)
+    storage.add(None, [ANOMALY], 0, 1)
+    storage.add(None, [dict(ANOMALY, timestamp="2026-11-10T00:00:00Z")], 0, 2)
+    assert storage.flush_if_due() is True
+    assert storage.pending == 0
+    storage.add(None, [ANOMALY], 0, 3)
+    assert storage.flush_if_due() is False  # compteur du lot remis à zéro
+    storage.flush()
+    assert aggregate_day(db_conn, date(2026, 11, 9)) == 1
+    assert aggregate_day(db_conn, date(2026, 11, 9)) == 1
+    with db_conn.cursor() as cur:
+        cur.execute("SELECT measurement_count, valid_count, completeness, pm2_5_avg, "
+                    "anomaly_count, source FROM daily_aggregates")
+        assert cur.fetchall() == [(0, 0, None, None, 2, "simulator")]
+
+
+def test_compteurs_sur_plusieurs_pages(db_conn):
+    storage = Storage(db_conn)
+    for _ in range(2):
+        for offset in range(205):
+            storage.add(processed(), [ANOMALY], 0, offset)
+        storage.flush()
+    assert storage.total == {"measurements": 205, "anomalies": 205}
+    assert count(db_conn, "measurements") == 205
+    assert count(db_conn, "anomalies") == 205
+
+
+def test_echec_transaction_puis_reprise(db_conn, monkeypatch):
+    from streaming import storage as module
+
+    real_execute_values = module.execute_values
+    calls = 0
+
+    def fail_second(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("échec simulé après écriture des mesures")
+        return real_execute_values(*args, **kwargs)
+
+    storage = Storage(db_conn, batch_size=1)
+    storage.add(processed(), [ANOMALY], 0, 1)
+    monkeypatch.setattr(module, "execute_values", fail_second)
+    with pytest.raises(RuntimeError):
+        storage.flush_if_due()
+    assert count(db_conn, "measurements") == 0
+    assert count(db_conn, "anomalies") == 0
+    assert storage.total == {"measurements": 0, "anomalies": 0}
+    assert storage.pending == 2
+    monkeypatch.setattr(module, "execute_values", real_execute_values)
+    assert storage.flush_if_due() is True
+    assert storage.total == {"measurements": 1, "anomalies": 1}
+    assert storage.pending == 0
