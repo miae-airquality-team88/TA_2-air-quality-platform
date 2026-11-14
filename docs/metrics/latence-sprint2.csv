@@ -1,0 +1,4 @@
+etape,source,messages,moyenne_ms,p50_ms,p95_ms,max_ms
+kafka_vers_db,simulator,361,1622.5,1085.3,3078.0,3088.0
+kafka_vers_traitement,simulator,361,85.1,69.0,100.0,1024.0
+traitement_vers_db,simulator,361,1537.4,1019.2,2987.8,2993.7
