@@ -1,6 +1,6 @@
 # =============================================================
 #  Air Quality Platform - Infrastructure de base (Sprint 1)
-#  Tickets Jira : AQ-6 (infrastructure), AQ-7 (services applicatifs)
+#  Tickets Jira : AQ-6 (infrastructure), AQ-7 (services applicatifs), AQ-25 (Airflow)
 #  Services : Kafka (mode KRaft, sans Zookeeper) + PostgreSQL
 #             + Kafka UI (interface web pour visualiser Kafka)
 # =============================================================
@@ -135,8 +135,72 @@ services:
     networks:
       - airquality-net
 
+  # -----------------------------------------------------------
+  # Airflow (AQ-25) : orchestration du pipeline quotidien
+  # Profil "airflow" : ne démarre que sur demande (économise la mémoire) :
+  #   docker compose --profile airflow up -d --build
+  # Interface : http://localhost:8080 (admin / mot de passe du .env)
+  # -----------------------------------------------------------
+  airflow:
+    build: ./airflow
+    image: air-quality-airflow:latest
+    container_name: aq-airflow
+    profiles: ["airflow"]
+    command: ["bash", "/opt/aq/start.sh"]
+    user: "50000:0"
+    ports:
+      - "8080:8080"
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+      AIRFLOW__CORE__DEFAULT_TIMEZONE: utc
+      AIRFLOW__WEBSERVER__WORKERS: "2"
+      CONNECTION_CHECK_MAX_COUNT: "0"
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY:-change_moi_aussi}
+      AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL: "30"
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin}
+      # Connexion « airquality_db » utilisée par les sensors SQL des DAGs
+      AIRFLOW_CONN_AIRQUALITY_DB: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      # Variables lues par common/config.py (le code du projet est monté dans /opt/airflow/project)
+      PYTHONPATH: /opt/airflow/project
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      # Seuils des contrôles qualité (AQ-29), réglables dans le .env
+      QUALITY_MIN_ROWS: ${QUALITY_MIN_ROWS:-100}
+      QUALITY_MIN_COMPLETENESS: ${QUALITY_MIN_COMPLETENESS:-0.8}
+      QUALITY_MAX_AGE_HOURS: ${QUALITY_MAX_AGE_HOURS:-26}
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./common:/opt/airflow/project/common
+      - ./orchestration:/opt/airflow/project/orchestration
+      - ./streaming:/opt/airflow/project/streaming
+      - ./scripts:/opt/airflow/project/scripts
+      - ./schemas:/opt/airflow/project/schemas
+      - ./sql:/opt/airflow/project/sql
+      - ./data:/opt/airflow/project/data
+      - ./models:/opt/airflow/project/models
+      - airflow_logs:/opt/airflow/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
+    restart: unless-stopped
+    networks:
+      - airquality-net
+
 volumes:
   pg_data:
+  airflow_logs:
 
 networks:
   airquality-net:

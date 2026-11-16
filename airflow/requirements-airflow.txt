@@ -1,0 +1,7 @@
+# Bibliothèques ajoutées à l'image Airflow pour nos tâches.
+# pandas et psycopg2 sont normalement déjà dans l'image officielle : on les fixe
+# aux versions compatibles avec Airflow 2.10.5 pour être sûrs de les avoir.
+pandas==2.1.4
+psycopg2-binary==2.9.10
+scikit-learn==1.5.2
+python-dotenv==1.0.1

@@ -36,3 +36,5 @@ OPENAQ_LOCATION_ID = int(os.getenv("OPENAQ_LOCATION_ID", "3847229"))
 # --- Chemins ---
 DATA_DIR = ROOT_DIR / "data"
 SCHEMA_PATH = ROOT_DIR / "schemas" / "sensor_message.json"
+EXTRACTS_DIR = DATA_DIR / "extracts"     # extractions quotidiennes du DAG (Phase 2)
+MODELS_DIR = ROOT_DIR / "models"         # modèles entraînés : candidats et production
