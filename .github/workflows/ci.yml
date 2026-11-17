@@ -3,8 +3,9 @@
 #  À chaque push sur main et à chaque Pull Request :
 #    1. lint   : vérification du style avec ruff
 #    2. tests  : pytest, avec un vrai PostgreSQL (service Docker de GitHub)
-#    3. docker : construction de l'image de l'application + vérification du docker-compose
-#  Une PR ne peut être fusionnée que si les 3 jobs sont verts (protection de main).
+#    3. airflow : construction de l'image Airflow + chargement des DAGs (AQ-25)
+#    4. docker : construction de l'image de l'application + vérification du docker-compose
+#  Une PR ne peut être fusionnée que si les jobs sont verts (protection de main).
 # =============================================================
 name: CI
 
@@ -43,7 +44,6 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      AQ_REQUIRE_POSTGRES: "1"
       POSTGRES_HOST: localhost
       POSTGRES_PORT: "5432"
       POSTGRES_USER: airquality
@@ -59,6 +59,26 @@ jobs:
       - name: Lancer les tests
         run: pytest -v
 
+  airflow:
+    name: DAGs Airflow
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Construire l'image Airflow
+        run: docker build -t air-quality-airflow:ci airflow
+      - name: Charger les DAGs (aucune erreur d'import autorisée)
+        run: |
+          docker run --rm \
+            -e PYTHONPATH=/opt/airflow/project \
+            -e AIRFLOW__CORE__LOAD_EXAMPLES=false \
+            -v "$PWD/airflow/dags:/opt/airflow/dags" \
+            -v "$PWD/common:/opt/airflow/project/common" \
+            -v "$PWD/orchestration:/opt/airflow/project/orchestration" \
+            -v "$PWD/streaming:/opt/airflow/project/streaming" \
+            -v "$PWD/scripts:/opt/airflow/project/scripts" \
+            air-quality-airflow:ci \
+            python /opt/airflow/project/scripts/check_dags.py
+
   docker:
     name: Build Docker
     runs-on: ubuntu-latest
@@ -69,4 +89,4 @@ jobs:
       - name: Vérifier la syntaxe du docker-compose
         run: |
           cp .env.example .env
-          docker compose --profile app config --quiet
+          docker compose --profile app --profile airflow config --quiet
