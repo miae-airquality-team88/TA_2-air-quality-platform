@@ -9,3 +9,7 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
+
+[tool.ruff.lint.isort]
+# Le dossier airflow/ du dépôt contient nos DAGs : ce n'est pas le package Airflow
+known-third-party = ["airflow"]
