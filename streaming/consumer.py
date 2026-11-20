@@ -10,6 +10,8 @@ traitement, écrites par l'équipe :
              ──► 5. publication processed_data + anomalies (AQ-19, streaming/publisher.py)
              ──► 6. écriture PostgreSQL par lots      (AQ-22, streaming/storage.py)
              ──► 7. validation des offsets Kafka (commit) APRÈS l'écriture en base
+             ──► toutes les 30 s : signal d'activité (heartbeat) dans PostgreSQL (AQ-34),
+                 lu par Airflow pour savoir si le streaming d'une journée est terminé
 
 Garantie « au moins une fois » : les offsets ne sont validés qu'une fois les
 données en base. Après un plantage, Kafka renvoie les messages non validés,
@@ -32,6 +34,7 @@ from streaming.validation import validate
 from streaming.windows import SlidingWindows
 
 GROUP_ID = "aq-streaming"
+HEARTBEAT_EVERY_S = 30
 
 # Anomalie injectée par le simulateur -> type(s) d'anomalie qui la détectent
 DETECTION_MAP = {
@@ -126,6 +129,17 @@ def build_consumer():
     })
 
 
+def _heartbeat(conn, consumer, pipeline, storage, status, last_measured_at):
+    """Envoie le signal d'activité ; une erreur ici ne doit jamais arrêter le consumer."""
+    from streaming.heartbeat import compute_lag, send_heartbeat
+    try:
+        send_heartbeat(conn, status, pipeline.stats["lus"], compute_lag(consumer),
+                       storage.pending, last_measured_at)
+    except Exception as exc:
+        conn.rollback()
+        print(f"Signal d'activité non envoyé : {exc}")
+
+
 def run(batch_size=50, max_wait_s=2.0, report_every=100):
     from common.db import get_connection
     from ingestion.producer import build_producer
@@ -142,6 +156,7 @@ def run(batch_size=50, max_wait_s=2.0, report_every=100):
     print(f"Consumer '{GROUP_ID}' à l'écoute de {TOPIC_RAW} ({KAFKA_BOOTSTRAP_SERVERS}). "
           "Ctrl+C pour arrêter.")
     last_report, last_count = time.monotonic(), 0
+    last_heartbeat, last_measured_at = 0.0, None
     try:
         while True:
             msg = consumer.poll(1.0)
@@ -153,10 +168,16 @@ def run(batch_size=50, max_wait_s=2.0, report_every=100):
                 processed, anomalies = pipeline.process(msg.value(), msg.timestamp()[1])
                 publish(producer, processed, anomalies)
                 storage.add(processed, anomalies, msg.partition(), msg.offset())
+                if processed is not None:
+                    last_measured_at = processed["timestamp"]
 
             if storage.flush_if_due():
                 producer.flush(5)
                 consumer.commit(asynchronous=False)
+
+            if time.monotonic() - last_heartbeat >= HEARTBEAT_EVERY_S:
+                _heartbeat(conn, consumer, pipeline, storage, "running", last_measured_at)
+                last_heartbeat = time.monotonic()
 
             read = pipeline.stats["lus"]
             if read != last_count and (read - last_count >= report_every
@@ -172,6 +193,7 @@ def run(batch_size=50, max_wait_s=2.0, report_every=100):
             consumer.commit(asynchronous=False)
         except Exception:   # rien à valider (aucun message lu)
             pass
+        _heartbeat(conn, consumer, pipeline, storage, "stopped", last_measured_at)
         consumer.close()
         conn.close()
         print("Bilan :", pipeline.summary())
