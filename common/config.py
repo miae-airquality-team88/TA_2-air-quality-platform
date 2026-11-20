@@ -38,3 +38,12 @@ DATA_DIR = ROOT_DIR / "data"
 SCHEMA_PATH = ROOT_DIR / "schemas" / "sensor_message.json"
 EXTRACTS_DIR = DATA_DIR / "extracts"     # extractions quotidiennes du DAG (Phase 2)
 MODELS_DIR = ROOT_DIR / "models"         # modèles entraînés : candidats et production
+
+
+def quality_thresholds():
+    """Seuils AQ-29, lus après le chargement du .env (et réglables par exécution)."""
+    return {
+        "min_rows": int(os.getenv("QUALITY_MIN_ROWS", "100")),
+        "min_completeness": float(os.getenv("QUALITY_MIN_COMPLETENESS", "0.8")),
+        "max_age_hours": float(os.getenv("QUALITY_MAX_AGE_HOURS", "26")),
+    }
