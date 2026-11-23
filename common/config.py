@@ -33,6 +33,10 @@ POSTGRES_DB = os.getenv("POSTGRES_DB", "airquality")
 OPENAQ_API_KEY = os.getenv("OPENAQ_API_KEY", "")
 OPENAQ_LOCATION_ID = int(os.getenv("OPENAQ_LOCATION_ID", "3847229"))
 
+# --- Période commune des données historiques simulées, OpenAQ et Airflow ---
+BACKFILL_START_DATE = os.getenv("BACKFILL_START_DATE", "2026-10-27")
+BACKFILL_END_DATE = os.getenv("BACKFILL_END_DATE", "2026-11-25")
+
 # --- Chemins ---
 DATA_DIR = ROOT_DIR / "data"
 SCHEMA_PATH = ROOT_DIR / "schemas" / "sensor_message.json"
