@@ -28,6 +28,7 @@ from airflow.operators.python import BranchPythonOperator, PythonOperator
 from airflow.providers.common.sql.sensors.sql import SqlSensor
 from airflow.sensors.python import PythonSensor
 
+from orchestration.alerts import task_failure_callback
 from orchestration.sensors import new_data_sql, streaming_done_for_sensor
 
 # Journée traitée : le paramètre « day » s'il est rempli, sinon le début de
@@ -110,10 +111,11 @@ with DAG(
     start_date=pendulum.datetime(2026, 11, 1, tz="UTC"),
     catchup=False,               # le rattrapage de l'historique sera un DAG dédié (Sprint 4)
     max_active_runs=1,
-    default_args={
+        default_args={
         "owner": "equipe-aq",
         "retries": 1,
         "retry_delay": pendulum.duration(minutes=2),
+        "on_failure_callback": task_failure_callback,  # alerte en cas d'échec (AQ-38)
     },
     params={
         "day": Param(None, type=["null", "string"],
