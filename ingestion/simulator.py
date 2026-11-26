@@ -132,6 +132,22 @@ def build_message(sensor, timestamp, measurements, anomaly=None):
     return message
 
 
+def simulate_measurement(sensor, timestamp, anomaly_rate, rng):
+    """Génère une mesure et met à jour le dernier état du capteur."""
+    measurements = normal_measurements(rng)
+    anomaly = None
+    if rng.random() < anomaly_rate:
+        available = list(ANOMALY_TYPES)
+        if sensor["last"] is None:
+            available.remove("stuck")
+        anomaly = rng.choice(available)
+        measurements = inject_anomaly(measurements, anomaly, sensor["last"], rng)
+
+    message = build_message(sensor, timestamp, measurements, anomaly)
+    sensor["last"] = measurements.copy()
+    return message
+
+
 def stream(
     count=None,
     interval=1.0,
@@ -180,32 +196,7 @@ def stream(
                 sensor["mute_left"] = rng.randint(10, 30)
                 continue
 
-            measurements = normal_measurements(rng)
-            anomaly = None
-
-            if rng.random() < anomaly_rate:
-                available = list(ANOMALY_TYPES)
-
-                if sensor["last"] is None:
-                    available.remove("stuck")
-
-                anomaly = rng.choice(available)
-                measurements = inject_anomaly(
-                    measurements,
-                    anomaly,
-                    sensor["last"],
-                    rng,
-                )
-
-            message = build_message(
-                sensor,
-                timestamp,
-                measurements,
-                anomaly,
-            )
-
-            sensor["last"] = measurements.copy()
-            yield message
+            yield simulate_measurement(sensor, timestamp, anomaly_rate, rng)
 
         cycle += 1
 
