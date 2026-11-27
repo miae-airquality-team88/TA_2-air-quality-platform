@@ -37,36 +37,26 @@ DAY = "{{ params.day or data_interval_start | ds }}"
 
 
 # --------------------------------------------------------------------------
-# Fonctions appelées par les tâches. Les imports sont faits À L'INTÉRIEUR des
-# fonctions : Airflow relit ce fichier toutes les 30 s, il doit rester léger.
+# Fonctions appelées par les tâches. Extract, qualité et agrégats sont partagés
+# avec le DAG de backfill (orchestration/tasks.py, AQ-41). Les imports sont faits
+# À L'INTÉRIEUR des fonctions : Airflow relit ce fichier toutes les 30 s.
 # --------------------------------------------------------------------------
-def _with_connection(func, *args, **kwargs):
-    from common.db import get_connection
-
-    conn = get_connection()
-    try:
-        return func(conn, *args, **kwargs)
-    finally:
-        conn.close()
-
-
 def _extract(day):
-    from common.config import EXTRACTS_DIR
-    from orchestration.extract import extract_day
+    from orchestration.tasks import run_extract
 
-    return _with_connection(extract_day, day, EXTRACTS_DIR)
+    return run_extract(day)
 
 
 def _validate_quality(day, run_id):
-    from orchestration.quality import validate_day
+    from orchestration.tasks import run_validate_quality
 
-    return _with_connection(validate_day, day, run_id=run_id)
+    return run_validate_quality(day, run_id)
 
 
 def _aggregate(day):
-    from orchestration.aggregate import run_daily_aggregate
+    from orchestration.tasks import run_aggregate
 
-    return _with_connection(run_daily_aggregate, day)
+    return run_aggregate(day)
 
 
 def _train(day):
@@ -111,11 +101,11 @@ with DAG(
     start_date=pendulum.datetime(2026, 11, 1, tz="UTC"),
     catchup=False,               # le rattrapage de l'historique sera un DAG dédié (Sprint 4)
     max_active_runs=1,
-        default_args={
+    default_args={
         "owner": "equipe-aq",
         "retries": 1,
         "retry_delay": pendulum.duration(minutes=2),
-        "on_failure_callback": task_failure_callback,  # alerte en cas d'échec (AQ-38)
+        "on_failure_callback": task_failure_callback,   # alerte en cas d'échec (AQ-38)
     },
     params={
         "day": Param(None, type=["null", "string"],
