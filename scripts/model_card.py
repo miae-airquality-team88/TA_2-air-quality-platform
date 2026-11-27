@@ -9,6 +9,7 @@ fidèle au modèle réellement déployé. On la régénère après chaque déplo
 Usage (depuis la racine du dépôt, après au moins un déploiement par le DAG) :
     python -m scripts.model_card
 """
+import argparse
 import json
 from pathlib import Path
 
@@ -33,6 +34,8 @@ par le DAG `air_quality_daily` et n'est déployé que s'il est meilleur que le m
 | Algorithme | Forêt aléatoire (`RandomForestClassifier`, scikit-learn) |
 | Hyperparamètres | 100 arbres, `class_weight="balanced"`, `random_state=42` |
 | Déployé le | {deployed_at} |
+| DAG Airflow | `air_quality_daily` |
+| Run ID Airflow | `{airflow_run_id}` |
 | Dossier du modèle | `{source_dir}` |
 
 ## 3. Données d'entraînement
@@ -78,16 +81,40 @@ def _period(files):
     return f"du {days[0]} au {days[-1]} ({len(days)} jour(s))" if days else "-"
 
 
-def build_card(models_dir=MODELS_DIR):
+def build_card(models_dir=MODELS_DIR, run_id=None):
     """Construit le texte de la fiche à partir des fichiers du modèle en production."""
     production = Path(models_dir) / "production" / "metrics.json"
     if not production.exists():
         raise SystemExit("Aucun modèle en production : lancez d'abord le DAG air_quality_daily.")
     metrics = json.loads(production.read_text(encoding="utf-8"))
-    info_path = Path(metrics.get("source_dir", "")) / "training_info.json"
-    info = json.loads(info_path.read_text(encoding="utf-8")) if info_path.exists() else {}
+
+    source_dir = str(metrics.get("source_dir") or "")
+    info_path = Path(source_dir) / "training_info.json"
+
+    # Si le chemin du conteneur Docker n'existe pas sur l'hote,
+    # retrouver le meme candidat dans le repertoire local models_dir.
+    if not info_path.is_file() and source_dir:
+        parts = source_dir.replace("\\", "/").rstrip("/").split("/")
+
+        if len(parts) >= 2 and parts[-2] == "candidates":
+            candidate_name = parts[-1]
+            info_path = (
+                Path(models_dir)
+                / "candidates"
+                / candidate_name
+                / "training_info.json"
+            )
+
+    if not info_path.is_file():
+        raise FileNotFoundError(
+            f"Metadonnees d'entrainement introuvables : {info_path}"
+        )
+
+    info = json.loads(info_path.read_text(encoding="utf-8"))
+
     files = info.get("training_files", [])
     return TEMPLATE.format(
+        airflow_run_id=run_id or "Non renseigné",
         deployed_at=metrics.get("deployed_at", "-"),
         source_dir=metrics.get("source_dir", "-"),
         training_files=", ".join(f"`{f}`" for f in files) or "-",
@@ -101,9 +128,20 @@ def build_card(models_dir=MODELS_DIR):
     )
 
 
+
 def main():
+    parser = argparse.ArgumentParser(
+        description="Generer la Model Card du modele en production"
+    )
+    parser.add_argument(
+        "--run-id",
+        default=None,
+        help="Identifiant du run Airflow ayant deploye le modele",
+    )
+    args = parser.parse_args()
+
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT.write_text(build_card(), encoding="utf-8")
+    OUTPUT.write_text(build_card(run_id=args.run_id), encoding="utf-8")
     print(f"Fiche écrite dans {OUTPUT}")
 
 

@@ -34,3 +34,34 @@ def test_fiche_contient_les_vrais_chiffres(tmp_path):
 def test_sans_modele_en_production(tmp_path):
     with pytest.raises(SystemExit):
         build_card(tmp_path)
+
+def test_metadonnees_docker_vers_windows(tmp_path):
+    """La fiche doit retrouver les metadonnees meme avec un chemin Docker."""
+    fake_production(tmp_path)
+
+    metrics_path = tmp_path / "production" / "metrics.json"
+    metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+
+    # Chemin enregistre lors d'un entrainement dans Airflow (Linux)
+    metrics["source_dir"] = (
+        "/opt/airflow/project/models/candidates/2026-11-20_101500"
+    )
+    metrics_path.write_text(json.dumps(metrics), encoding="utf-8")
+
+    # Generation depuis l'hote Windows
+    card = build_card(tmp_path)
+
+    assert "1173 / 392" in card
+    assert "**Variables (2)**" in card
+    assert "`measurements_2026-11-19.csv`" in card
+
+def test_fiche_contient_run_id_airflow(tmp_path):
+    """Verifie la tracabilite de l'execution Airflow."""
+    fake_production(tmp_path)
+
+    run_id = "manual__aq40_2026-11-22"
+    card = build_card(tmp_path, run_id=run_id)
+
+    assert "| DAG Airflow | `air_quality_daily` |" in card
+    assert f"| Run ID Airflow | `{run_id}` |" in card
+    assert "**0.7727**" in card

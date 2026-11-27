@@ -14,8 +14,10 @@ par le DAG `air_quality_daily` et n'est déployé que s'il est meilleur que le m
 |---|---|
 | Algorithme | Forêt aléatoire (`RandomForestClassifier`, scikit-learn) |
 | Hyperparamètres | 100 arbres, `class_weight="balanced"`, `random_state=42` |
-| Déployé le | 2026-11-26T22:44:45Z |
-| Dossier du modèle | `D:\projet Data ML OPS\TA_2 Air Quality Platform\models\candidates\2026-11-22_224220` |
+| Déployé le | 2026-11-27T14:39:04Z |
+| DAG Airflow | `air_quality_daily` |
+| Run ID Airflow | `manual__aq40_2026-11-22` |
+| Dossier du modèle | `/opt/airflow/project/models/candidates/2026-11-22_143853` |
 
 ## 3. Données d'entraînement
 | Élément | Valeur |
