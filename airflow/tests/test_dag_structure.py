@@ -33,7 +33,7 @@ def test_les_trois_dags_existent(dagbag):
 @pytest.mark.parametrize("dag_id", ["air_quality_daily", "air_quality_backfill",
                                     "streaming_monitor"])
 def test_reglages_communs(dagbag, dag_id):
-    dag = dagbag.get_dag(dag_id)
+    dag = dagbag.dags[dag_id]
     for task in dag.tasks:
         assert task.retries >= 1, f"{task.task_id} : aucune nouvelle tentative"
         assert task.on_failure_callback, f"{task.task_id} : pas d'alerte en cas d'échec"
@@ -41,7 +41,7 @@ def test_reglages_communs(dagbag, dag_id):
 
 
 def test_dag_quotidien(dagbag):
-    dag = dagbag.get_dag("air_quality_daily")
+    dag = dagbag.dags["air_quality_daily"]
     assert dag.schedule_interval == "@daily"
     assert dag.catchup is False and dag.max_active_runs == 1
     assert {t.task_id for t in dag.tasks} == {
@@ -58,7 +58,7 @@ def test_dag_quotidien(dagbag):
 
 
 def test_dag_backfill(dagbag):
-    dag = dagbag.get_dag("air_quality_backfill")
+    dag = dagbag.dags["air_quality_backfill"]
     assert dag.catchup is True
     assert dag.start_date is not None and dag.end_date is not None
     assert dag.start_date < dag.end_date
@@ -69,7 +69,7 @@ def test_dag_backfill(dagbag):
 
 
 def test_dag_surveillance(dagbag):
-    dag = dagbag.get_dag("streaming_monitor")
+    dag = dagbag.dags["streaming_monitor"]
     assert dag.schedule_interval == "*/15 * * * *"
     assert dag.catchup is False
     assert [t.task_id for t in dag.tasks] == ["check_streaming"]
