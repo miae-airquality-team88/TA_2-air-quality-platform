@@ -78,6 +78,19 @@ jobs:
             -v "$PWD/scripts:/opt/airflow/project/scripts" \
             air-quality-airflow:ci \
             python /opt/airflow/project/scripts/check_dags.py
+      - name: Tests de structure des DAGs (AQ-42)
+        run: |
+          docker run --rm \
+            -e PYTHONPATH=/opt/airflow/project \
+            -e AIRFLOW__CORE__LOAD_EXAMPLES=false \
+            -v "$PWD/airflow/dags:/opt/airflow/dags" \
+            -v "$PWD/airflow/tests:/opt/airflow/dag_tests" \
+            -v "$PWD/common:/opt/airflow/project/common" \
+            -v "$PWD/orchestration:/opt/airflow/project/orchestration" \
+            -v "$PWD/streaming:/opt/airflow/project/streaming" \
+            -v "$PWD/scripts:/opt/airflow/project/scripts" \
+            air-quality-airflow:ci \
+            python -m pytest -v -p no:cacheprovider /opt/airflow/dag_tests
 
   docker:
     name: Build Docker
