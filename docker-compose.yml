@@ -170,10 +170,22 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+      # Période du backfill (AQ-36, AQ-41)
+      BACKFILL_START_DATE: ${BACKFILL_START_DATE:-2026-10-27}
+      BACKFILL_END_DATE: ${BACKFILL_END_DATE:-2026-11-25}
       # Seuils des contrôles qualité (AQ-29), réglables dans le .env
       QUALITY_MIN_ROWS: ${QUALITY_MIN_ROWS:-100}
       QUALITY_MIN_COMPLETENESS: ${QUALITY_MIN_COMPLETENESS:-0.8}
       QUALITY_MAX_AGE_HOURS: ${QUALITY_MAX_AGE_HOURS:-26}
+      # Alertes (AQ-38) : canal slack | email | aucun, réglé dans le .env
+      ALERT_CHANNEL: ${ALERT_CHANNEL:-aucun}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
+      AIRFLOW__WEBSERVER__BASE_URL: http://localhost:8080
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./common:/opt/airflow/project/common

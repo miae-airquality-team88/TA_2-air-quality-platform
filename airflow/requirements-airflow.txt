@@ -5,3 +5,5 @@ pandas==2.1.4
 psycopg2-binary==2.9.10
 scikit-learn==1.5.2
 python-dotenv==1.0.1
+# Tests de structure des DAGs exécutés dans l'image (AQ-42)
+pytest==8.3.3
