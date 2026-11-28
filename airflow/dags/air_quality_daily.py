@@ -156,6 +156,6 @@ with DAG(
 
     end = EmptyOperator(task_id="end", trigger_rule="none_failed_min_one_success")
 
-    [wait_new_data, wait_streaming_done] >> extract >> validate_quality >> [aggregate, train]
+    [wait_new_data, wait_streaming_done] >> validate_quality >> [aggregate, train]
     train >> evaluate >> deploy_if_better >> [deploy_model, skip_deploy]
     [aggregate, deploy_model, skip_deploy] >> end
